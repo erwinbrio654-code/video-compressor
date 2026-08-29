@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Video Compressor - Fast Loader</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#090b10;--card:#141821;--card2:#0f131b;--border:#2a3140;--text:#f6f7fb;--muted:#9aa5b6;--a:#ff5a1f;--b:#ff9500;--ok:#43d98f;--err:#ff6878}
+body{margin:0;background:radial-gradient(circle at 15% 0,rgba(255,90,31,.14),transparent 30%),var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;min-height:100vh}
+.wrap{width:min(900px,calc(100% - 28px));margin:auto;padding:42px 0 70px}
+.head{text-align:center;margin-bottom:25px}.head h1{font-size:clamp(34px,7vw,58px);margin:10px 0}.head p{color:var(--muted);line-height:1.6;margin:auto;max-width:650px}
+.badge{display:inline-block;padding:7px 12px;border-radius:999px;background:rgba(255,90,31,.1);border:1px solid rgba(255,90,31,.3);color:#ff9872;font-size:13px;font-weight:700}
+.card{background:var(--card);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 25px 70px rgba(0,0,0,.3)}
+.drop{margin:20px;padding:40px 20px;min-height:220px;display:grid;place-items:center;text-align:center;border:2px dashed #374052;border-radius:16px;cursor:pointer;background:rgba(255,255,255,.01)}
+.drop:hover,.drop.drag{border-color:var(--a);background:rgba(255,90,31,.045)}
+.ico{width:68px;height:68px;margin:0 auto 15px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,var(--a),var(--b));font-size:30px;font-weight:900}
+.drop strong{display:block;font-size:18px;margin-bottom:7px}.drop small{color:var(--muted)}
+#file{display:none}
+.panel{display:none;padding:20px;border-top:1px solid var(--border)}
+.info{display:flex;gap:13px;align-items:center;padding:14px;background:var(--card2);border:1px solid var(--border);border-radius:13px;margin-bottom:18px}
+.info .v{font-size:26px}.info .grow{min-width:0;flex:1}.name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}.meta{color:var(--muted);font-size:13px;margin-top:5px}
+.x{border:0;background:none;color:var(--muted);font-size:24px;cursor:pointer}.x:hover{color:var(--err)}
+.label{font-size:14px;font-weight:700;margin:0 0 9px;display:block}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:17px}
+.preset input{display:none}.preset span{display:block;border:1px solid var(--border);background:var(--card2);border-radius:12px;padding:13px;cursor:pointer}
+.preset b{display:block;font-size:14px;margin-bottom:4px}.preset em{font-style:normal;color:var(--muted);font-size:12px}
+.preset input:checked+span{border-color:var(--a);background:rgba(255,90,31,.08)}
+button.go{width:100%;height:52px;border:0;border-radius:13px;color:#fff;background:linear-gradient(135deg,var(--a),var(--b));font-size:15px;font-weight:800;cursor:pointer}
+button.go:disabled{opacity:.55;cursor:not-allowed}
+.progress,.result,.error{display:none;margin-top:18px;padding:15px;border:1px solid var(--border);background:var(--card2);border-radius:13px}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:13px;margin-bottom:9px}
+.track{height:9px;background:#282f3c;border-radius:999px;overflow:hidden}.bar{height:100%;width:0;background:linear-gradient(90deg,var(--a),var(--b));transition:width .15s}
+.detail{font-size:12px;color:var(--muted);margin-top:9px;line-height:1.5;word-break:break-word}
+.error{border-color:rgba(255,104,120,.3);background:rgba(255,104,120,.07);color:#ffadb5}
+.result{border-color:rgba(67,217,143,.3);background:rgba(67,217,143,.06)}
+.result h3{margin:0 0 12px;color:#7cedb0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.stat{background:rgba(0,0,0,.15);padding:11px;border-radius:10px}.stat small{display:block;color:var(--muted);margin-bottom:4px}
+.download{display:block;text-align:center;padding:13px;background:#fff;color:#111;border-radius:11px;text-decoration:none;font-weight:800}
+.foot{text-align:center;color:var(--muted);font-size:12px;line-height:1.5;margin-top:15px}
+@media(max-width:650px){.wrap{padding-top:25px}.presets,.stats{grid-template-columns:1fr}.drop{margin:13px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <span class="badge">Fast loader · H.264 MP4</span>
+    <h1>Video Compressor</h1>
+    <p>Kompres video langsung di browser. Mesin video hanya dimuat sekali dan browser biasanya akan menyimpannya di cache.</p>
+  </div>
+
+  <div class="card">
+    <div class="drop" id="drop">
+      <div>
+        <div class="ico">↑</div>
+        <strong>Pilih atau tarik video ke sini</strong>
+        <small>MP4, MOV, MKV, AVI dan format video umum</small>
+      </div>
+      <input id="file" type="file" accept="video/*,.mkv,.avi,.mov,.m4v">
+    </div>
+
+    <div class="panel" id="panel">
+      <div class="info">
+        <div class="v">▶</div>
+        <div class="grow">
+          <div class="name" id="name">-</div>
+          <div class="meta" id="meta">-</div>
+        </div>
+        <button class="x" id="remove">×</button>
+      </div>
+
+      <label class="label">Kualitas</label>
+      <div class="presets">
+        <label class="preset"><input type="radio" name="q" value="high"><span><b>Kualitas Tinggi</b><em>CRF 23 · resolusi asli</em></span></label>
+        <label class="preset"><input type="radio" name="q" value="balanced" checked><span><b>Seimbang</b><em>CRF 27 · maks 1080p</em></span></label>
+        <label class="preset"><input type="radio" name="q" value="small"><span><b>Ukuran Kecil</b><em>CRF 30 · maks 720p</em></span></label>
+      </div>
+
+      <button class="go" id="go">Compress Video</button>
+
+      <div class="progress" id="progress">
+        <div class="row"><strong id="status">Menyiapkan...</strong><span id="pct">0%</span></div>
+        <div class="track"><div class="bar" id="bar"></div></div>
+        <div class="detail" id="detail">-</div>
+      </div>
+
+      <div class="error" id="error"></div>
+
+      <div class="result" id="result">
+        <h3>✓ Kompresi selesai</h3>
+        <div class="stats">
+          <div class="stat"><small>Sebelum</small><strong id="before">-</strong></div>
+          <div class="stat"><small>Sesudah</small><strong id="after">-</strong></div>
+          <div class="stat"><small>Hemat</small><strong id="saved">-</strong></div>
+        </div>
+        <a class="download" id="download" download="compressed.mp4">Download Video</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    Versi ini menggunakan build MP4 FFmpeg.js yang lebih kecil. Untuk video sangat besar, kompresi di browser tetap dibatasi RAM perangkat.
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const input=$('file'),drop=$('drop'),panel=$('panel'),nameEl=$('name'),meta=$('meta'),go=$('go');
+const progress=$('progress'),statusEl=$('status'),pct=$('pct'),bar=$('bar'),detail=$('detail'),error=$('error'),result=$('result');
+let file=null,width=0,height=0,duration=0,worker=null,workerBlobURL=null,downloadURL=null,workerReady=false;
+
+const WORKER_MIRRORS=[
+  'https://cdn.jsdelivr.net/npm/ffmpeg.js@4.2.9003/ffmpeg-worker-mp4.js',
+  'https://unpkg.com/ffmpeg.js@4.2.9003/ffmpeg-worker-mp4.js'
+];
+
+function bytes(n){
+  if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
+  return (n/1024/1024).toFixed(n>100*1024*1024?1:2)+' MB';
+}
+function setP(n,text,sub=''){
+  n=Math.max(0,Math.min(100,Math.round(n)));
+  bar.style.width=n+'%';pct.textContent=n+'%';
+  if(text)statusEl.textContent=text;
+  if(sub)detail.textContent=sub;
+}
+function resetOutput(){
+  error.style.display='none';result.style.display='none';
+  if(downloadURL){URL.revokeObjectURL(downloadURL);downloadURL=null}
+}
+function selectFile(f){
+  if(!f)return;
+  file=f;resetOutput();panel.style.display='block';nameEl.textContent=f.name;
+  meta.textContent=bytes(f.size)+' · membaca info...';
+  const v=document.createElement('video'),u=URL.createObjectURL(f);
+  v.preload='metadata';
+  v.onloadedmetadata=()=>{
+    width=v.videoWidth||0;height=v.videoHeight||0;duration=v.duration||0;
+    meta.textContent=bytes(f.size)+(width?` · ${width}×${height}`:'')+(duration?` · ${Math.round(duration)} detik`:'');
+    URL.revokeObjectURL(u);
+  };
+  v.onerror=()=>{meta.textContent=bytes(f.size);URL.revokeObjectURL(u)};
+  v.src=u;
+}
+drop.onclick=()=>input.click();
+input.onchange=e=>selectFile(e.target.files[0]);
+['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));
+['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));
+drop.addEventListener('drop',e=>selectFile(e.dataTransfer.files[0]));
+$('remove').onclick=e=>{e.stopPropagation();file=null;input.value='';panel.style.display='none';resetOutput()};
+
+async function fetchWorkerWithProgress(url){
+  const r=await fetch(url,{cache:'force-cache'});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const total=Number(r.headers.get('content-length'))||0;
+  if(!r.body){
+    const blob=await r.blob();
+    setP(22,'Mesin selesai diunduh',bytes(blob.size));
+    return blob;
+  }
+  const reader=r.body.getReader(),parts=[];let got=0;
+  while(true){
+    const {done,value}=await reader.read();
+    if(done)break;
+    parts.push(value);got+=value.byteLength;
+    let p=total?Math.min(22,(got/total)*22):Math.min(21,3+got/(10*1024*1024)*18);
+    setP(p,'Mengunduh mesin video...',total?`${bytes(got)} / ${bytes(total)}`:`${bytes(got)} diterima`);
+  }
+  return new Blob(parts,{type:'text/javascript'});
+}
+
+async function ensureWorker(){
+  if(worker && workerReady)return;
+  setP(1,'Menghubungkan ke server mesin video...','Mencoba mirror tercepat');
+  let blob,lastErr;
+  for(let i=0;i<WORKER_MIRRORS.length;i++){
+    try{
+      detail.textContent='Mirror '+(i+1)+' dari '+WORKER_MIRRORS.length;
+      blob=await Promise.race([
+        fetchWorkerWithProgress(WORKER_MIRRORS[i]),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout download')),45000))
+      ]);
+      break;
+    }catch(e){lastErr=e}
+  }
+  if(!blob)throw new Error('Semua mirror gagal: '+(lastErr?.message||'unknown'));
+
+  workerBlobURL=URL.createObjectURL(blob);
+  setP(23,'Menyalakan mesin video...','Memulai Web Worker');
+
+  await new Promise((resolve,reject)=>{
+    let timer=setTimeout(()=>reject(new Error('Worker tidak siap dalam 30 detik')),30000);
+    worker=new Worker(workerBlobURL);
+    worker.onmessage=e=>{
+      if(e.data && e.data.type==='ready'){
+        clearTimeout(timer);workerReady=true;setP(25,'Mesin video siap','Mulai membaca video');resolve();
+      }
+    };
+    worker.onerror=e=>{clearTimeout(timer);reject(new Error(e.message||'Worker error'))};
+  });
+}
+
+function presetArgs(inputName){
+  const q=document.querySelector('input[name=q]:checked').value;
+  let crf='27',audio='96k',vf=[];
+  if(q==='high'){crf='23';audio='128k'}
+  if(q==='small'){crf='30';audio='80k';if(width>1280)vf=['-vf','scale=1280:-2']}
+  if(q==='balanced' && width>1920)vf=['-vf','scale=1920:-2'];
+  return [
+    '-i',inputName,
+    ...vf,
+    '-c:v','libx264','-preset','veryfast','-crf',crf,
+    '-pix_fmt','yuv420p',
+    '-c:a','aac','-b:a',audio,
+    '-movflags','+faststart',
+    '-y','compressed.mp4'
+  ];
+}
+
+function parseTimeToSec(line){
+  const m=line.match(/time=(\d+):(\d+):([\d.]+)/);
+  if(!m)return null;
+  return (+m[1])*3600+(+m[2])*60+(+m[3]);
+}
+
+go.onclick=async()=>{
+  if(!file)return;
+  resetOutput();progress.style.display='block';go.disabled=true;go.textContent='Sedang Compress...';
+  try{
+    if(file.size>250*1024*1024)throw new Error('Video lebih dari 250 MB terlalu berat untuk versi browser ini. Gunakan backend/server FFmpeg untuk file sebesar itu.');
+    await ensureWorker();
+
+    setP(27,'Membaca file video...',bytes(file.size));
+    const arr=await file.arrayBuffer();
+    const ext=(file.name.split('.').pop()||'mp4').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const inputName='input.'+ext;
+
+    setP(30,'Memulai kompresi...','H.264 + AAC');
+
+    await new Promise((resolve,reject)=>{
+      let exitCode=null;
+      worker.onmessage=e=>{
+        const msg=e.data||{};
+        if(msg.type==='stderr'){
+          const t=parseTimeToSec(String(msg.data||''));
+          if(t!==null && duration>0){
+            const encodeP=30+Math.min(.99,t/duration)*64;
+            setP(encodeP,'Mengompres video...',`Proses ${Math.min(100,(t/duration)*100).toFixed(1)}% video`);
+          }
+        }else if(msg.type==='exit'){
+          exitCode=msg.data;
+        }else if(msg.type==='error'||msg.type==='abort'){
+          reject(new Error(String(msg.data||msg.type)));
+        }else if(msg.type==='done'){
+          if(exitCode!==null && exitCode!==0)return reject(new Error('FFmpeg exit code '+exitCode));
+          const out=msg.data?.MEMFS?.find(x=>x.name==='compressed.mp4') || msg.data?.MEMFS?.[0];
+          if(!out||!out.data)return reject(new Error('File hasil tidak ditemukan'));
+          const blob=new Blob([out.data],{type:'video/mp4'});
+          downloadURL=URL.createObjectURL(blob);
+          $('download').href=downloadURL;
+          $('download').download=(file.name.replace(/\.[^.]+$/,'')||'video')+'-compressed.mp4';
+          $('before').textContent=bytes(file.size);
+          $('after').textContent=bytes(blob.size);
+          const s=(1-blob.size/file.size)*100;
+          $('saved').textContent=s>=0?s.toFixed(1)+'%':Math.abs(s).toFixed(1)+'% lebih besar';
+          setP(100,'Selesai','Video siap didownload');
+          result.style.display='block';
+          resolve();
+        }
+      };
+
+      const memory=file.size>100*1024*1024?536870912:268435456;
+      worker.postMessage({
+        type:'run',
+        TOTAL_MEMORY:memory,
+        MEMFS:[{name:inputName,data:new Uint8Array(arr)}],
+        arguments:presetArgs(inputName)
+      });
+    });
+  }catch(e){
+    console.error(e);
+    error.textContent='Gagal: '+(e?.message||e)+'. Jika berhenti saat download mesin, coba jaringan lain atau matikan pemblokir CDN.';
+    error.style.display='block';
+    statusEl.textContent='Gagal';
+  }finally{
+    go.disabled=false;go.textContent='Compress Video';
+  }
+};
+</script>
+</body>
+</html>
