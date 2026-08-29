@@ -103,7 +103,7 @@ button.go:disabled{opacity:.55;cursor:not-allowed}
   </div>
 
   <div class="foot">
-    Mendukung video hingga 500 MB. Untuk file besar, gunakan Chrome/Edge 64-bit dan tutup tab lain karena proses kompresi membutuhkan RAM cukup besar.
+    Menerima file hingga 500 MB. Keberhasilan file besar tetap bergantung pada codec video dan RAM browser. Gunakan Chrome/Edge 64-bit dan tutup tab lain.
   </div>
 </div>
 
@@ -213,10 +213,18 @@ function presetArgs(inputName){
   return [
     '-i',inputName,
     ...vf,
-    '-c:v','libx264','-preset','veryfast','-crf',crf,
+    '-map','0:v:0',
+    '-map','0:a:0?',
+    '-sn',
+    '-dn',
+    '-c:v','libx264',
+    '-preset','veryfast',
+    '-crf',crf,
     '-pix_fmt','yuv420p',
-    '-c:a','aac','-b:a',audio,
-    '-movflags','+faststart',
+    '-threads','1',
+    '-c:a','aac',
+    '-b:a',audio,
+    '-ac','2',
     '-y','compressed.mp4'
   ];
 }
@@ -251,20 +259,43 @@ go.onclick=async()=>{
 
     await new Promise((resolve,reject)=>{
       let exitCode=null;
+      const stderrLines=[];
+
       worker.onmessage=e=>{
         const msg=e.data||{};
+
         if(msg.type==='stderr'){
-          const t=parseTimeToSec(String(msg.data||''));
+          const line=String(msg.data||'');
+          stderrLines.push(line);
+          if(stderrLines.length>40) stderrLines.shift();
+
+          const t=parseTimeToSec(line);
           if(t!==null && duration>0){
             const encodeP=30+Math.min(.99,t/duration)*64;
-            setP(encodeP,'Mengompres video...',`Proses ${Math.min(100,(t/duration)*100).toFixed(1)}% video`);
+            setP(
+              encodeP,
+              'Mengompres video...',
+              `Proses ${Math.min(100,(t/duration)*100).toFixed(1)}% video`
+            );
           }
         }else if(msg.type==='exit'){
           exitCode=msg.data;
         }else if(msg.type==='error'||msg.type==='abort'){
-          reject(new Error(String(msg.data||msg.type)));
+          const tail=stderrLines.slice(-8).join(' | ');
+          reject(new Error(String(msg.data||msg.type)+(tail?' — '+tail:'')));
         }else if(msg.type==='done'){
-          if(exitCode!==null && exitCode!==0)return reject(new Error('FFmpeg exit code '+exitCode));
+          if(exitCode!==null && exitCode!==0){
+            const useful=stderrLines
+              .filter(x => !/^\s*$/.test(x))
+              .slice(-10)
+              .join(' | ');
+            return reject(
+              new Error(
+                'FFmpeg exit code '+exitCode+
+                (useful ? ' — '+useful : '')
+              )
+            );
+          }
           const out=msg.data?.MEMFS?.find(x=>x.name==='compressed.mp4') || msg.data?.MEMFS?.[0];
           if(!out||!out.data)return reject(new Error('File hasil tidak ditemukan'));
           const blob=new Blob([out.data],{type:'video/mp4'});
@@ -306,7 +337,7 @@ go.onclick=async()=>{
     });
   }catch(e){
     console.error(e);
-    error.textContent='Gagal: '+(e?.message||e)+'. Jika berhenti saat download mesin, coba jaringan lain atau matikan pemblokir CDN.';
+    error.textContent='Gagal: '+(e?.message||e)+'. Salin atau screenshot bagian error ini jika masih gagal; sekarang pesan di atas berisi detail langsung dari FFmpeg.';
     error.style.display='block';
     statusEl.textContent='Gagal';
   }finally{
