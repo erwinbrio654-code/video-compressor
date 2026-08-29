@@ -46,7 +46,7 @@ button.go:disabled{opacity:.55;cursor:not-allowed}
   <div class="head">
     <span class="badge">Fast loader · H.264 MP4</span>
     <h1>Video Compressor</h1>
-    <p>Kompres video hingga 500 MB langsung di browser. Mesin video hanya dimuat sekali dan browser biasanya akan menyimpannya di cache.</p>
+    <p>Kompres video hingga 500 MB langsung di browser. File besar dibaca melalui WORKERFS sehingga video tidak perlu disalin seluruhnya ke RAM sebelum proses dimulai.</p>
   </div>
 
   <div class="card">
@@ -70,7 +70,7 @@ button.go:disabled{opacity:.55;cursor:not-allowed}
       </div>
 
       <div style="margin-bottom:14px;padding:12px 13px;border:1px solid rgba(255,149,0,.28);background:rgba(255,149,0,.07);border-radius:11px;color:#e9b77b;font-size:12px;line-height:1.5">
-        <strong>File besar:</strong> versi ini menerima hingga 500 MB. Untuk video di atas 250 MB, gunakan Chrome/Edge 64-bit dan sisakan RAM minimal 2–4 GB agar tab browser tidak kehabisan memori.
+        <strong>File besar:</strong> versi ini menerima hingga 500 MB dan menggunakan WORKERFS untuk membaca file langsung. Gunakan Chrome/Edge 64-bit dan sebaiknya sisakan RAM minimal 2 GB.
       </div>
 
       <label class="label">Kualitas</label>
@@ -103,7 +103,7 @@ button.go:disabled{opacity:.55;cursor:not-allowed}
   </div>
 
   <div class="foot">
-    Menerima file hingga 500 MB. Keberhasilan file besar tetap bergantung pada codec video dan RAM browser. Gunakan Chrome/Edge 64-bit dan tutup tab lain.
+    Menerima file hingga 500 MB. Input besar dibaca dengan WORKERFS agar penggunaan RAM lebih efisien. Output hasil kompresi tetap disimpan sementara di memori browser.
   </div>
 </div>
 
@@ -211,6 +211,8 @@ function presetArgs(inputName){
   if(q==='small'){crf='30';audio='80k';if(width>1280)vf=['-vf','scale=1280:-2']}
   if(q==='balanced' && width>1920)vf=['-vf','scale=1920:-2'];
   return [
+    '-probesize','100M',
+    '-analyzeduration','100M',
     '-i',inputName,
     ...vf,
     '-map','0:v:0',
@@ -250,12 +252,15 @@ go.onclick=async()=>{
 
     await ensureWorker();
 
-    setP(27,'Membaca file video...',bytes(file.size));
-    const arr=await file.arrayBuffer();
-    const ext=(file.name.split('.').pop()||'mp4').replace(/[^a-z0-9]/gi,'').toLowerCase();
-    const inputName='input.'+ext;
+    // Jangan copy seluruh video ke MEMFS.
+    // File akan di-mount langsung melalui WORKERFS agar file 250–500 MB
+    // tidak perlu dimuat dua kali ke RAM browser.
+    setP(27,'Menyiapkan file besar...','Menggunakan WORKERFS (tanpa copy penuh ke RAM)');
 
-    setP(30,'Memulai kompresi...','H.264 + AAC');
+    const safeName = (file.name || 'input.mp4').replace(/[\\/]/g,'_');
+    const inputPath = '/input/' + safeName;
+
+    setP(30,'Memulai kompresi...','H.264 + AAC · input dibaca langsung dari file');
 
     await new Promise((resolve,reject)=>{
       let exitCode=null;
@@ -312,32 +317,46 @@ go.onclick=async()=>{
         }
       };
 
-      // Alokasi heap dinamis untuk file besar.
-      // ffmpeg.js menyimpan input dan output di memory, sehingga butuh RAM beberapa kali ukuran file.
+      // Karena input memakai WORKERFS, file asli tidak dimasukkan ke MEMFS.
+      // RAM terutama dipakai untuk encoder + hasil output.
       const MB = 1024 * 1024;
       let memory;
-      if (file.size <= 100 * MB) {
+      if (file.size <= 150 * MB) {
         memory = 512 * MB;
-      } else if (file.size <= 250 * MB) {
-        memory = 768 * MB;
       } else if (file.size <= 350 * MB) {
-        memory = 1024 * MB;
+        memory = 768 * MB;
       } else {
-        memory = 1536 * MB;
+        memory = 1024 * MB;
       }
 
-      setP(30,'Memulai kompresi...',`Heap FFmpeg: ${Math.round(memory/MB)} MB`);
+      setP(
+        30,
+        'Memulai kompresi...',
+        `WORKERFS aktif · Heap FFmpeg ${Math.round(memory/MB)} MB`
+      );
 
       worker.postMessage({
         type:'run',
         TOTAL_MEMORY:memory,
-        MEMFS:[{name:inputName,data:new Uint8Array(arr)}],
-        arguments:presetArgs(inputName)
+
+        // WORKERFS membaca File/Blob langsung tanpa copy seluruh input ke MEMFS.
+        mounts:[{
+          type:'WORKERFS',
+          opts:{files:[file]},
+          mountpoint:'/input'
+        }],
+
+        arguments:presetArgs(inputPath)
       });
     });
   }catch(e){
     console.error(e);
-    error.textContent='Gagal: '+(e?.message||e)+'. Salin atau screenshot bagian error ini jika masih gagal; sekarang pesan di atas berisi detail langsung dari FFmpeg.';
+    const msg=String(e?.message||e);
+    let hint='';
+    if(/moov atom not found|Invalid data found when processing input/i.test(msg)){
+      hint=' Jika error moov masih muncul pada versi WORKERFS, kemungkinan file MP4 aslinya memang belum lengkap/rusak atau ekstensi .mp4 tidak sesuai dengan format sebenarnya.';
+    }
+    error.textContent='Gagal: '+msg+'.'+hint+' Salin atau screenshot error ini jika masih gagal.';
     error.style.display='block';
     statusEl.textContent='Gagal';
   }finally{
